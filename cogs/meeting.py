@@ -42,6 +42,7 @@ class Meeting(commands.Cog):
     async def on_ready(self):
         if not self.rwapi:
             self.rwapi = RobowebAPI(os.getenv("ROBOWEB_API_TOKEN"))
+        await self.reload_meetings(None)
         async with (connect(os.getenv("WS_URL"),
                             additional_headers={"Authorization": f"Token {os.getenv("ROBOWEB_API_TOKEN")}"})
                     as websocket):
@@ -53,7 +54,7 @@ class Meeting(commands.Cog):
                     if start_time < datetime.datetime.now(now_tz):
                         continue
                 if data["type"] in ("meeting.create", "meeting.edit"):
-                    is_edit = 'meeting.edit'
+                    is_edit = (meeting["type"] == 'meeting.edit')
                     meeting = data["meeting"]
                     meeting_id = meeting["id"]
                     logging.info(
@@ -103,15 +104,19 @@ class Meeting(commands.Cog):
 
     def setup_tasks(self, meeting: dict):
         meeting_id = meeting["id"]
+        logging.debug(f"Setting up tasks for meeting #{meeting_id}")
         if meeting_id in MEETING_TASKS.keys():
-            for _, task in MEETING_TASKS[meeting_id].items():
+            for task_type, task in MEETING_TASKS[meeting_id].items():
                 if task:
+                    logging.debug(f"(#{meeting_id:2d}) Cancelling existing \"{task_type}\" task")
                     task.cancel()
         start_time = datetime.datetime.fromisoformat(meeting["start_time"]).replace(tzinfo=now_tz)
         if not start_time - datetime.datetime.now(now_tz) >= datetime.timedelta(minutes=5):
             notify_time = datetime.datetime.now(now_tz) + datetime.timedelta(seconds=5)
+            logging.debug(f"(#{meeting_id:2d}) Notify time is less than 5 minutes away, setting to 5 seconds from now")
         else:
             notify_time = start_time - datetime.timedelta(minutes=5)
+            logging.debug(f"(#{meeting_id:2d}) Notify time set to {notify_time.isoformat()}")
         start_time = datetime.datetime.fromisoformat(meeting["start_time"]).replace(tzinfo=now_tz)
         MEETING_TASKS[meeting_id] = {
             "notify": tasks.Loop(
@@ -277,9 +282,11 @@ class Meeting(commands.Cog):
                                 inline=False)
             embed.add_field(name="地點", value=meeting_info.get("location"), inline=False)
             if meeting_info.get("can_absent", False):
-                embed.add_field(name="允許請假", value="此會議可請假。", inline=False)
+                embed.add_field(name="允許請假", value="成員可透過網頁面板請假。", inline=False)
             else:
-                embed.add_field(name="不允許請假", value="所有成員皆需參加此會議。", inline=False)
+                embed.add_field(name="不允許請假",
+                                value="已停用此會議的請假功能。\n若無法參加會議，請直接與主幹聯絡。",
+                                inline=False)
             await ctx.respond(embed=embed)
         except Exception as e:
             embed = Embed(title="錯誤：會議不存在", description="輸入的會議 ID 可能不存在，或是 API 發生錯誤。",
@@ -337,6 +344,28 @@ class Meeting(commands.Cog):
             embed = Embed(title="錯誤：會議不存在", description="輸入的會議 ID 可能不存在，或是 API 發生錯誤。",
                           color=error_color)
             embed.add_field(name="錯誤訊息", value=f"```{type(e).__name__}: {str(e)}```", inline=False)
+            await ctx.respond(embed=embed, ephemeral=True)
+
+    @MEETING_CMDS.command(name="重新載入提醒", description="重新載入會議提醒。")
+    async def reload_meetings(self, ctx: ApplicationContext = None):
+        try:
+            upcoming_meetings = await self.rwapi.get_upcoming_meetings()
+            for meeting_id in MEETING_TASKS.keys():
+                for _, task in MEETING_TASKS[meeting_id].items():
+                    if task is not None:
+                        task.cancel()
+            MEETING_TASKS.clear()
+            for meeting in upcoming_meetings:
+                self.setup_tasks(meeting)
+            embed = Embed(title="成功：已重新載入會議提醒",
+                          description="已重新載入所有未來的會議提醒。",
+                          color=default_color)
+        except Exception as e:
+            embed = Embed(title="錯誤：無法重新載入會議",
+                          description="重新載入會議時發生錯誤。",
+                          color=error_color)
+            embed.add_field(name="錯誤訊息", value=f"```{type(e).__name__}: {str(e)}```", inline=False)
+        if ctx:
             await ctx.respond(embed=embed, ephemeral=True)
 
 

@@ -71,6 +71,13 @@ class RobowebAPI:
                 raise Exception(f"Failed to fetch meeting info: {response.status} ({await response.text()})")
             return await response.json()
 
+    async def get_upcoming_meetings(self) -> list[dict]:
+        url = f"{self.BASE_URL}meetings/upcoming/"
+        async with self.session.get(url) as response:
+            if response.status != 200:
+                raise Exception(f"Failed to fetch upcoming meetings: {response.status} ({await response.text()})")
+            return await response.json()
+
     async def get_absent_requests(self, meeting_id: int) -> list:
         url = f"{self.BASE_URL}absent_requests/?meeting__id={meeting_id}"
         async with self.session.get(url) as response:
