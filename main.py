@@ -35,5 +35,5 @@ async def ping(ctx: discord.ApplicationContext):
     await ctx.respond("Pong!")
 
 
-bot.load_extensions("cogs.new_verification", "cogs.meeting")
+bot.load_extensions("cogs.new_verification", "cogs.meeting", "cogs.member")
 bot.run(DISCORD_TOKEN)
