@@ -43,7 +43,7 @@ class Meeting(commands.Cog):
         if not self.rwapi:
             self.rwapi = RobowebAPI(os.getenv("ROBOWEB_API_TOKEN"))
         await self.reload_meetings(None)
-        async with (connect(os.getenv("WS_URL"),
+        async with (connect(f"{os.getenv('WS_URL')}meeting/",
                             additional_headers={"Authorization": f"Token {os.getenv("ROBOWEB_API_TOKEN")}"})
                     as websocket):
             while True:
