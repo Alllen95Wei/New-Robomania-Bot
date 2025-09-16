@@ -51,6 +51,13 @@ class RobowebAPI:
                 raise Exception(f"Failed to fetch member info: {response.status} ({await response.text()})")
             return await response.json()
 
+    async def get_bad_guys(self) -> list:
+        url = f"{self.BASE_URL}members/bad_guys/"
+        async with self.session.get(url) as response:
+            if response.status != 200:
+                raise Exception(f"Failed to fetch bad guys: {response.status} ({await response.text()})")
+            return await response.json()
+
     async def create_member(self, discord_id: int, real_name: str, gen: int, email_address: str = None) -> dict:
         url = f"{self.BASE_URL}members/"
         payload = {
@@ -107,8 +114,8 @@ if __name__ == "__main__":
     async def main():
         load_dotenv("TOKEN.env")
         api = RobowebAPI(getenv("ROBOWEB_API_TOKEN"))
-        await api.index_members()
-        # pprint(await api.get_absent_requests(5))
+        # await api.index_members()
+        pprint(await api.get_bad_guys())
         await api.session.close()
 
     asyncio.run(main())
