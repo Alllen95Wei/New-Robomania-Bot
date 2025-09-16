@@ -43,7 +43,7 @@ class Member(commands.Cog):
                     is_positive = warning_detail["points"] < 0
                     embed = Embed(
                         title=f"{'銷點' if is_positive else '記點'}通知",
-                        description=f"剛才有主幹對你進行了 **{'銷點' if is_positive else '記點'}** 操作。",
+                        description=f"剛才有主幹對你進行了 **{'銷點' if is_positive else '記點'}** 操作，資料如下：",
                         color=default_color
                     )
                     embed.add_field(name="點數", value=f"`{warning_detail['points']}` 點", inline=False)
