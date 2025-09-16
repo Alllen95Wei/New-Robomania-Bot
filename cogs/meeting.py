@@ -49,7 +49,7 @@ class Meeting(commands.Cog):
             while True:
                 data = loads(await websocket.recv())
                 # don't send notifications for past meetings
-                if "meeting" in data["type"]:
+                if "meeting" in data["type"] and data["type"] != "meeting.review_absent_request":
                     start_time = datetime.datetime.fromisoformat(data["meeting"]["start_time"]).replace(tzinfo=now_tz)
                     if start_time < datetime.datetime.now(now_tz):
                         continue
@@ -99,6 +99,32 @@ class Meeting(commands.Cog):
                     embed.add_field(name="名稱", value=meeting["name"], inline=False)
                     ch = self.bot.get_channel(NOTIFY_CHANNEL_ID)
                     await ch.send(embed=embed)
+                elif data["type"] == "meeting.review_absent_request":
+                    absent_request = data["absent_request"]
+                    logging.info(f"Received absent request review event for request #{absent_request['id']}")
+                    status = {"approved": "✅ 批准", "rejected": "❌ 拒絕"}
+                    member_discord_id = int(
+                        (await self.rwapi.get_member_info(absent_request["member"], True))["discord_id"]
+                    )
+                    reviewer_discord_id = int(
+                        (await self.rwapi.get_member_info(absent_request["reviewer"], True))["discord_id"]
+                    )
+                    meeting = await self.rwapi.get_meeting_info(absent_request["meeting"])
+                    embed = Embed(title="假單審核結果", description="你的假單已經過主幹審核，結果如下：", color=default_color)
+                    embed.add_field(name="會議名稱及 ID", value=f"{meeting['name']} (`#{meeting['id']}`)", inline=False)
+                    embed.add_field(name="審核人員", value=f"<@{reviewer_discord_id}>", inline=False)
+                    embed.add_field(name="審核結果", value=status.get(absent_request["status"], "未知"), inline=False)
+                    if absent_request.get("reviewer_comment", None):
+                        embed.add_field(name="審核意見", value=absent_request["reviewer_comment"], inline=False)
+                    embed.set_footer(text="若對審核結果有異議，請直接與主幹聯絡。")
+                    try:
+                        await self.bot.get_user(member_discord_id).send(embed=embed)
+                    except discord.Forbidden:
+                        logging.warning(
+                            f"成員 {member_discord_id} 似乎關閉了陌生人私訊功能，因此無法傳送通知。"
+                        )
+                    except Exception as e:
+                        logging.error(f"傳送私訊給成員 {member_discord_id} 時發生錯誤：{type(e).__name__}: {str(e)}")
                 else:
                     logging.info(f"Received unknown event: {data}")
 
