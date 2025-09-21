@@ -2,11 +2,13 @@
 import aiohttp
 from os import getenv
 from json import dump, load
+from dotenv import load_dotenv
 
 
 class RobowebAPI:
     # BASE_URL = "https://frc7636.dpdns.org/api/"
-    BASE_URL = "http://127.0.0.1:8000/api/"
+    load_dotenv("TOKEN.env")
+    BASE_URL = getenv("ROBOWEB_API_URL")
 
     def __init__(self, token: str = getenv("ROBOWEB_API_TOKEN")):
         self.token = token
