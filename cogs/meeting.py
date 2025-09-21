@@ -54,7 +54,7 @@ class Meeting(commands.Cog):
                     if start_time < datetime.datetime.now(now_tz):
                         continue
                 if data["type"] in ("meeting.create", "meeting.edit"):
-                    is_edit = (meeting["type"] == 'meeting.edit')
+                    is_edit = (data["type"] == 'meeting.edit')
                     meeting = data["meeting"]
                     meeting_id = meeting["id"]
                     logging.info(
