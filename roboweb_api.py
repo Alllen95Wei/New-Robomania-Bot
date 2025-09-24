@@ -106,6 +106,13 @@ class RobowebAPI:
                 raise Exception(f"Failed to create absent request: {response.status} ({await response.text()})")
             return await response.json()
 
+    async def get_pinned_announcements(self) -> list:
+        url = f"{self.BASE_URL}announcements/pinned/"
+        async with self.session.get(url) as response:
+            if response.status != 200:
+                raise Exception(f"Failed to fetch pinned announcements: {response.status} ({await response.text()})")
+            return await response.json()
+
 
 if __name__ == "__main__":
     from dotenv import load_dotenv
@@ -117,7 +124,7 @@ if __name__ == "__main__":
         load_dotenv("TOKEN.env")
         api = RobowebAPI(getenv("ROBOWEB_API_TOKEN"))
         # await api.index_members()
-        pprint(await api.get_bad_guys())
+        pprint(await api.get_pinned_announcements())
         await api.session.close()
 
     asyncio.run(main())
