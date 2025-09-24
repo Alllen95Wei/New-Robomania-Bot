@@ -18,7 +18,7 @@ now_tz = zoneinfo.ZoneInfo("Asia/Taipei")
 default_color = 0x012a5e
 error_color = 0xF1411C
 
-NOTIFY_CHANNEL_ID = int(os.getenv("NOTIFY_CHANNEL_ID", "1128232150135738529"))
+ANNOUNCE_CHANNEL_ID = int(os.getenv("ANNOUNCE_CHANNEL_ID", "1128232150135738529"))
 ANNOUNCEMENT_TASKS: dict[str, dict[str, tasks.Loop | None]] = {}
 
 
@@ -52,7 +52,7 @@ class Announcement(commands.Cog):
 """
                     if len(message) > 2000:
                         message = message[:1997] + "..."
-                    channel = self.bot.get_channel(NOTIFY_CHANNEL_ID)
+                    channel = self.bot.get_channel(ANNOUNCE_CHANNEL_ID)
                     await channel.send(message)
                 elif data["type"] in ("announcement.delete", "announcement.unpin"):
                     announcement_id = data["announcement"]["id"]
