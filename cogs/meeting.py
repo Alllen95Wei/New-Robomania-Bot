@@ -171,7 +171,7 @@ class Meeting(commands.Cog):
         return notify_time
 
     async def notify_meeting(self, meeting: dict):
-        start_time = datetime.datetime.fromisoformat(meeting["start_time"])
+        start_time = datetime.datetime.fromisoformat(meeting["start_time"]).astimezone(now_tz)
         if start_time - datetime.datetime.now(now_tz) > datetime.timedelta(seconds=1000):
             return
         embed = Embed(
