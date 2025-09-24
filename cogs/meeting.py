@@ -205,7 +205,7 @@ class Meeting(commands.Cog):
                 )
                 embed.add_field(name="會議名稱及 ID", value=f"{meeting['name']} (`#{meeting['id']}`)", inline=False)
                 embed.add_field(
-                    name="開始時間", value=f"<t:{start_time}:R>", inline=False
+                    name="開始時間", value=f"<t:{int(start_time.timestamp())}:R>", inline=False
                 )
                 try:
                     await self.bot.get_user(member_discord_id).send(embed=embed)
@@ -225,7 +225,7 @@ class Meeting(commands.Cog):
         embed = Embed(
             title="會議開始！",
             description=f"會議**「{meeting['name']}」**(`#{meeting['id']}`) 已經在 "
-                        f"<t:{start_time}:F> 開始！",
+                        f"<t:{int(start_time.timestamp())}:F> 開始！",
             color=default_color,
         )
         if meeting["description"] != "":
