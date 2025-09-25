@@ -7,7 +7,9 @@ import datetime
 import zoneinfo
 from pathlib import Path
 import logging
+import websockets
 from websockets.asyncio.client import connect, ClientConnection
+import asyncio
 from json import loads
 
 from roboweb_api import RobowebAPI
@@ -32,38 +34,61 @@ class Announcement(commands.Cog):
     async def on_ready(self):
         if not self.rwapi:
             self.rwapi = RobowebAPI(os.getenv("ROBOWEB_API_TOKEN"))
-        async with (connect(f"{os.getenv('WS_URL')}announcement/",
-                            additional_headers={"Authorization": f"Token {os.getenv("ROBOWEB_API_TOKEN")}"})
-                    as websocket):
-            self.ws = websocket
-            await self.reload_unpin_tasks(None)
-            while True:
-                data = loads(await websocket.recv())
-                if data["type"] == "announcement.pin":
-                    announcement = data["announcement"]
-                    self.setup_tasks(announcement)
-                elif data["type"] == "announcement.announce":
-                    announcement = data["announcement"]
-                    message = f"""\
+        await self.reload_unpin_tasks(None)
+
+        max_retries = 15
+        retries = 0
+        retry_delay = 2
+        while retries <= max_retries:
+            logging.info(f"Attempting to connect to WebSocket (Attempt {retries + 1}/{max_retries})...")
+            try:
+                async with (connect(f"{os.getenv('WS_URL')}announcement/",
+                                    additional_headers={"Authorization": f"Token {os.getenv("ROBOWEB_API_TOKEN")}"})
+                            as websocket):
+                    self.ws = websocket
+                    logging.info("Connected to WebSocket successfully.")
+                    retries = 0
+                    retry_delay = 2
+                    while True:
+                        data = loads(await websocket.recv())
+                        if data["type"] == "announcement.pin":
+                            announcement = data["announcement"]
+                            self.setup_tasks(announcement)
+                        elif data["type"] == "announcement.announce":
+                            announcement = data["announcement"]
+                            message = f"""\
 @everyone
 > 此公告由 Robomania Bot Web 同步發布至此。
 # {announcement['title']}
 {announcement['content']}
 """
-                    if len(message) > 2000:
-                        message = message[:1997] + "..."
-                    channel = self.bot.get_channel(ANNOUNCE_CHANNEL_ID)
-                    await channel.send(message)
-                elif data["type"] in ("announcement.delete", "announcement.unpin"):
-                    announcement_id = data["announcement"]["id"]
-                    if announcement_id in ANNOUNCEMENT_TASKS.keys():
-                        for task_type, task in ANNOUNCEMENT_TASKS[announcement_id].items():
-                            if task:
-                                logging.debug(f"(#{announcement_id:2d}) Cancelling existing \"{task_type}\" task")
-                                task.cancel()
-                        del ANNOUNCEMENT_TASKS[announcement_id]
-                else:
-                    logging.info(f"Received unknown event: {data}")
+                            if len(message) > 2000:
+                                message = message[:1997] + "..."
+                            channel = self.bot.get_channel(ANNOUNCE_CHANNEL_ID)
+                            await channel.send(message)
+                        elif data["type"] in ("announcement.delete", "announcement.unpin"):
+                            announcement_id = data["announcement"]["id"]
+                            if announcement_id in ANNOUNCEMENT_TASKS.keys():
+                                for task_type, task in ANNOUNCEMENT_TASKS[announcement_id].items():
+                                    if task:
+                                        logging.debug(f"(#{announcement_id:2d}) Cancelling existing \"{task_type}\" task")
+                                        task.cancel()
+                                del ANNOUNCEMENT_TASKS[announcement_id]
+                        else:
+                            logging.info(f"Received unknown event: {data}")
+            except websockets.exceptions.ConnectionClosedError:
+                retries += 1
+                retry_delay *= 2  # Exponential backoff
+                logging.error(f"WebSocket connection closed unexpectedly. "
+                              f"Attempting to reconnect in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+            except Exception as e:
+                retries += 1
+                retry_delay *= 2  # Exponential backoff
+                logging.error(f"An error occurred: {type(e).__name__}: {str(e)}. "
+                              f"Attempting to reconnect in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+        logging.error("Max retries reached. Could not connect to WebSocket.")
 
     def setup_tasks(self, announcement: dict):
         announcement_id = announcement["id"]

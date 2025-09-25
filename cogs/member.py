@@ -6,7 +6,9 @@ import os
 import zoneinfo
 from pathlib import Path
 import logging
+import websockets
 from websockets.asyncio.client import connect
+import asyncio
 from json import loads
 
 from roboweb_api import RobowebAPI
@@ -27,39 +29,62 @@ class Member(commands.Cog):
     async def on_ready(self):
         if not self.rwapi:
             self.rwapi = RobowebAPI(os.getenv("ROBOWEB_API_TOKEN"))
-        async with (connect(f"{os.getenv('WS_URL')}member/",
-                            additional_headers={"Authorization": f"Token {os.getenv("ROBOWEB_API_TOKEN")}"})
-                    as websocket):
-            while True:
-                data = loads(await websocket.recv())
-                if data["type"] == "member.add_warning_points":
-                    warning_detail = data["warning_detail"]
-                    logging.info(f"Received warning points event for #{warning_detail['id']}")
-                    member_discord_id = int((await self.rwapi.get_member_info(
-                        warning_detail["member"], True))["discord_id"])
-                    operator_discord_id = int((await self.rwapi.get_member_info(
-                        warning_detail["operator"], True))["discord_id"])
-                    current_points = (await self.rwapi.get_member_info(warning_detail["member"]))["warning_points"]
-                    is_positive = warning_detail["points"] < 0
-                    embed = Embed(
-                        title=f"{'銷點' if is_positive else '記點'}通知",
-                        description=f"剛才有主幹對你進行了 **{'銷點' if is_positive else '記點'}** 操作，資料如下：",
-                        color=default_color
-                    )
-                    embed.add_field(name="點數", value=f"`{warning_detail['points']}` 點", inline=False)
-                    embed.add_field(name="操作後點數", value=f"`{current_points}` 點", inline=False)
-                    embed.add_field(name="操作者", value=f"<@{operator_discord_id}>", inline=False)
-                    embed.add_field(name="事由", value=warning_detail["reason"], inline=False)
-                    if warning_detail["notes"]:
-                        embed.add_field(name="附註", value=warning_detail["notes"], inline=False)
-                    embed.set_footer(text="若有任何疑問，請立即聯絡主幹。")
-                    user = self.bot.get_user(member_discord_id)
-                    try:
-                        await user.send(embed=embed)
-                    except Exception as e:
-                        logging.error(f"無法傳送訊息給 {member_discord_id}: {e}")
-                else:
-                    logging.info(f"Received unknown event: {data}")
+
+        max_retries = 15
+        retries = 0
+        retry_delay = 2
+        while retries <= max_retries:
+            logging.info(f"Attempting to connect to WebSocket (Attempt {retries + 1}/{max_retries})...")
+            try:
+                async with (connect(f"{os.getenv('WS_URL')}member/",
+                                    additional_headers={"Authorization": f"Token {os.getenv("ROBOWEB_API_TOKEN")}"})
+                            as websocket):
+                    logging.info("Connected to WebSocket successfully.")
+                    retries = 0
+                    retry_delay = 2
+                    while True:
+                        data = loads(await websocket.recv())
+                        if data["type"] == "member.add_warning_points":
+                            warning_detail = data["warning_detail"]
+                            logging.info(f"Received warning points event for #{warning_detail['id']}")
+                            member_discord_id = int((await self.rwapi.get_member_info(
+                                warning_detail["member"], True))["discord_id"])
+                            operator_discord_id = int((await self.rwapi.get_member_info(
+                                warning_detail["operator"], True))["discord_id"])
+                            current_points = (await self.rwapi.get_member_info(warning_detail["member"]))["warning_points"]
+                            is_positive = warning_detail["points"] < 0
+                            embed = Embed(
+                                title=f"{'銷點' if is_positive else '記點'}通知",
+                                description=f"剛才有主幹對你進行了 **{'銷點' if is_positive else '記點'}** 操作，資料如下：",
+                                color=default_color
+                            )
+                            embed.add_field(name="點數", value=f"`{warning_detail['points']}` 點", inline=False)
+                            embed.add_field(name="操作後點數", value=f"`{current_points}` 點", inline=False)
+                            embed.add_field(name="操作者", value=f"<@{operator_discord_id}>", inline=False)
+                            embed.add_field(name="事由", value=warning_detail["reason"], inline=False)
+                            if warning_detail["notes"]:
+                                embed.add_field(name="附註", value=warning_detail["notes"], inline=False)
+                            embed.set_footer(text="若有任何疑問，請立即聯絡主幹。")
+                            user = self.bot.get_user(member_discord_id)
+                            try:
+                                await user.send(embed=embed)
+                            except Exception as e:
+                                logging.error(f"無法傳送訊息給 {member_discord_id}: {e}")
+                        else:
+                            logging.info(f"Received unknown event: {data}")
+            except websockets.exceptions.ConnectionClosedError:
+                retries += 1
+                retry_delay *= 2  # Exponential backoff
+                logging.error(f"WebSocket connection closed unexpectedly. "
+                              f"Attempting to reconnect in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+            except Exception as e:
+                retries += 1
+                retry_delay *= 2  # Exponential backoff
+                logging.error(f"An error occurred: {type(e).__name__}: {str(e)}. "
+                              f"Attempting to reconnect in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+        logging.error("Max retries reached. Could not connect to WebSocket.")
 
     MEMBER_CMD = discord.SlashCommandGroup(name="member", description="隊員資訊相關指令。")
 

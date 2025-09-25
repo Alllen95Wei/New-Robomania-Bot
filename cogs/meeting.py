@@ -8,7 +8,9 @@ import logging
 import zoneinfo
 from pathlib import Path
 import datetime
+import websockets
 from websockets.asyncio.client import connect
+import asyncio
 from json import loads
 
 from roboweb_api import RobowebAPI
@@ -43,90 +45,113 @@ class Meeting(commands.Cog):
         if not self.rwapi:
             self.rwapi = RobowebAPI(os.getenv("ROBOWEB_API_TOKEN"))
         await self.reload_meetings(None)
-        async with (connect(f"{os.getenv('WS_URL')}meeting/",
-                            additional_headers={"Authorization": f"Token {os.getenv("ROBOWEB_API_TOKEN")}"})
-                    as websocket):
-            while True:
-                data = loads(await websocket.recv())
-                # don't send notifications for past meetings
-                if "meeting" in data["type"] and data["type"] != "meeting.review_absent_request":
-                    start_time = datetime.datetime.fromisoformat(data["meeting"]["start_time"]).replace(tzinfo=now_tz)
-                    if start_time < datetime.datetime.now(now_tz):
-                        continue
-                if data["type"] in ("meeting.create", "meeting.edit"):
-                    is_edit = (data["type"] == 'meeting.edit')
-                    meeting = data["meeting"]
-                    meeting_id = meeting["id"]
-                    logging.info(
-                        f"Received new meeting {'edit' if is_edit else 'creation'} event "
-                        f"for meeting #{meeting_id}")
-                    embed = Embed(
-                        title="會議更新" if is_edit else "新會議",
-                        description=f"會議 `#{meeting_id}` 的資訊已更新。" if is_edit else f"已預定新的會議 `#{meeting_id}`。",
-                        color=default_color,
-                    )
-                    embed.add_field(name="名稱", value=meeting["name"], inline=False)
-                    if meeting["can_absent"]:
-                        embed.add_field(name="允許請假", value="成員可透過網頁面板請假。", inline=False)
-                    else:
-                        embed.add_field(name="不允許請假",
-                                        value="已停用此會議的請假功能。\n若無法參加會議，請直接與主幹聯絡。",
-                                        inline=False)
-                    host_discord_id = int((await self.rwapi.get_member_info(meeting["host"], True))["discord_id"])
-                    embed.add_field(name="主持人", value=f"<@{host_discord_id}>", inline=False)
-                    embed.add_field(name="開始時間",
-                                    value=f"<t:{int(datetime.datetime.fromisoformat(
-                                        meeting['start_time']).timestamp())}:F>", inline=False)
-                    embed.add_field(name="地點", value=meeting["location"], inline=False)
-                    embed.set_footer(text="如要進行更多操作 (編輯、請假、審核假單)，請至網頁面板查看。")
-                    ch = self.bot.get_channel(NOTIFY_CHANNEL_ID)
-                    await ch.send(embed=embed, view=self.MeetingURLView(meeting_id))
-                    self.setup_tasks(meeting)
-                elif data["type"] == "meeting.delete":
-                    meeting = data["meeting"]
-                    meeting_id = meeting["id"]
-                    logging.info(f"Received meeting deletion event for meeting #{meeting_id}")
-                    if meeting_id in MEETING_TASKS.keys():
-                        for _, task in MEETING_TASKS[meeting_id].items():
-                            if task:
-                                task.cancel()
-                        del MEETING_TASKS[meeting_id]
-                    embed = Embed(
-                        title="會議取消",
-                        description=f"會議 `#{meeting_id}` 已取消。",
-                        color=error_color,
-                    )
-                    embed.add_field(name="名稱", value=meeting["name"], inline=False)
-                    ch = self.bot.get_channel(NOTIFY_CHANNEL_ID)
-                    await ch.send(embed=embed)
-                elif data["type"] == "meeting.review_absent_request":
-                    absent_request = data["absent_request"]
-                    logging.info(f"Received absent request review event for request #{absent_request['id']}")
-                    status = {"approved": "✅ 批准", "rejected": "❌ 拒絕"}
-                    member_discord_id = int(
-                        (await self.rwapi.get_member_info(absent_request["member"], True))["discord_id"]
-                    )
-                    reviewer_discord_id = int(
-                        (await self.rwapi.get_member_info(absent_request["reviewer"], True))["discord_id"]
-                    )
-                    meeting = await self.rwapi.get_meeting_info(absent_request["meeting"])
-                    embed = Embed(title="假單審核結果", description="你的假單已經過主幹審核，結果如下：", color=default_color)
-                    embed.add_field(name="會議名稱及 ID", value=f"{meeting['name']} (`#{meeting['id']}`)", inline=False)
-                    embed.add_field(name="審核人員", value=f"<@{reviewer_discord_id}>", inline=False)
-                    embed.add_field(name="審核結果", value=status.get(absent_request["status"], "未知"), inline=False)
-                    if absent_request.get("reviewer_comment", None):
-                        embed.add_field(name="審核意見", value=absent_request["reviewer_comment"], inline=False)
-                    embed.set_footer(text="若對審核結果有異議，請直接與主幹聯絡。")
-                    try:
-                        await self.bot.get_user(member_discord_id).send(embed=embed)
-                    except discord.Forbidden:
-                        logging.warning(
-                            f"成員 {member_discord_id} 似乎關閉了陌生人私訊功能，因此無法傳送通知。"
-                        )
-                    except Exception as e:
-                        logging.error(f"傳送私訊給成員 {member_discord_id} 時發生錯誤：{type(e).__name__}: {str(e)}")
-                else:
-                    logging.info(f"Received unknown event: {data}")
+
+        max_retries = 15
+        retries = 0
+        retry_delay = 2
+        while retries <= max_retries:
+            logging.info(f"Attempting to connect to WebSocket (Attempt {retries + 1}/{max_retries})...")
+            try:
+                async with (connect(f"{os.getenv('WS_URL')}meeting/",
+                                    additional_headers={"Authorization": f"Token {os.getenv("ROBOWEB_API_TOKEN")}"})
+                            as websocket):
+                    logging.info("Connected to WebSocket successfully.")
+                    retries = 0
+                    retry_delay = 2
+                    while True:
+                        data = loads(await websocket.recv())
+                        # don't send notifications for past meetings
+                        if "meeting" in data["type"] and data["type"] != "meeting.review_absent_request":
+                            start_time = datetime.datetime.fromisoformat(data["meeting"]["start_time"])
+                            if start_time < datetime.datetime.now(now_tz):
+                                continue
+                        if data["type"] in ("meeting.create", "meeting.edit"):
+                            is_edit = (data["type"] == 'meeting.edit')
+                            meeting = data["meeting"]
+                            meeting_id = meeting["id"]
+                            logging.info(
+                                f"Received new meeting {'edit' if is_edit else 'creation'} event "
+                                f"for meeting #{meeting_id}")
+                            embed = Embed(
+                                title="會議更新" if is_edit else "新會議",
+                                description=f"會議 `#{meeting_id}` 的資訊已更新。" if is_edit else f"已預定新的會議 `#{meeting_id}`。",
+                                color=default_color,
+                            )
+                            embed.add_field(name="名稱", value=meeting["name"], inline=False)
+                            if meeting["can_absent"]:
+                                embed.add_field(name="允許請假", value="成員可透過網頁面板請假。", inline=False)
+                            else:
+                                embed.add_field(name="不允許請假",
+                                                value="已停用此會議的請假功能。\n若無法參加會議，請直接與主幹聯絡。",
+                                                inline=False)
+                            host_discord_id = int((await self.rwapi.get_member_info(meeting["host"], True))["discord_id"])
+                            embed.add_field(name="主持人", value=f"<@{host_discord_id}>", inline=False)
+                            embed.add_field(name="開始時間",
+                                            value=f"<t:{int(datetime.datetime.fromisoformat(
+                                                meeting['start_time']).timestamp())}:F>", inline=False)
+                            embed.add_field(name="地點", value=meeting["location"], inline=False)
+                            embed.set_footer(text="如要進行更多操作 (編輯、請假、審核假單)，請至網頁面板查看。")
+                            ch = self.bot.get_channel(NOTIFY_CHANNEL_ID)
+                            await ch.send(embed=embed, view=self.MeetingURLView(meeting_id))
+                            self.setup_tasks(meeting)
+                        elif data["type"] == "meeting.delete":
+                            meeting = data["meeting"]
+                            meeting_id = meeting["id"]
+                            logging.info(f"Received meeting deletion event for meeting #{meeting_id}")
+                            if meeting_id in MEETING_TASKS.keys():
+                                for _, task in MEETING_TASKS[meeting_id].items():
+                                    if task:
+                                        task.cancel()
+                                del MEETING_TASKS[meeting_id]
+                            embed = Embed(
+                                title="會議取消",
+                                description=f"會議 `#{meeting_id}` 已取消。",
+                                color=error_color,
+                            )
+                            embed.add_field(name="名稱", value=meeting["name"], inline=False)
+                            ch = self.bot.get_channel(NOTIFY_CHANNEL_ID)
+                            await ch.send(embed=embed)
+                        elif data["type"] == "meeting.review_absent_request":
+                            absent_request = data["absent_request"]
+                            logging.info(f"Received absent request review event for request #{absent_request['id']}")
+                            status = {"approved": "✅ 批准", "rejected": "❌ 拒絕"}
+                            member_discord_id = int(
+                                (await self.rwapi.get_member_info(absent_request["member"], True))["discord_id"]
+                            )
+                            reviewer_discord_id = int(
+                                (await self.rwapi.get_member_info(absent_request["reviewer"], True))["discord_id"]
+                            )
+                            meeting = await self.rwapi.get_meeting_info(absent_request["meeting"])
+                            embed = Embed(title="假單審核結果", description="你的假單已經過主幹審核，結果如下：", color=default_color)
+                            embed.add_field(name="會議名稱及 ID", value=f"{meeting['name']} (`#{meeting['id']}`)", inline=False)
+                            embed.add_field(name="審核人員", value=f"<@{reviewer_discord_id}>", inline=False)
+                            embed.add_field(name="審核結果", value=status.get(absent_request["status"], "未知"), inline=False)
+                            if absent_request.get("reviewer_comment", None):
+                                embed.add_field(name="審核意見", value=absent_request["reviewer_comment"], inline=False)
+                            embed.set_footer(text="若對審核結果有異議，請直接與主幹聯絡。")
+                            try:
+                                await self.bot.get_user(member_discord_id).send(embed=embed)
+                            except discord.Forbidden:
+                                logging.warning(
+                                    f"成員 {member_discord_id} 似乎關閉了陌生人私訊功能，因此無法傳送通知。"
+                                )
+                            except Exception as e:
+                                logging.error(f"傳送私訊給成員 {member_discord_id} 時發生錯誤：{type(e).__name__}: {str(e)}")
+                        else:
+                            logging.info(f"Received unknown event: {data}")
+            except websockets.exceptions.ConnectionClosedError:
+                retries += 1
+                retry_delay *= 2  # Exponential backoff
+                logging.error(f"WebSocket connection closed unexpectedly. "
+                              f"Attempting to reconnect in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+            except Exception as e:
+                retries += 1
+                retry_delay *= 2  # Exponential backoff
+                logging.error(f"An error occurred: {type(e).__name__}: {str(e)}. "
+                              f"Attempting to reconnect in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+        logging.error("Max retries reached. Could not connect to WebSocket.")
 
     def setup_tasks(self, meeting: dict):
         meeting_id = meeting["id"]
