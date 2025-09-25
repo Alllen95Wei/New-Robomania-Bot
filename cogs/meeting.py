@@ -202,7 +202,7 @@ class Meeting(commands.Cog):
         embed = Embed(
             title="會議即將開始！",
             description=f"會議**「{meeting['name']}」**(`#{meeting['id']}`) 即將於 "
-                        f"<t:{start_time}:R> 開始！",
+                        f"<t:{int(start_time.timestamp())}:R> 開始！",
             color=default_color,
         )
         if meeting["description"] != "":
