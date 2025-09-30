@@ -22,6 +22,7 @@ base_dir = os.path.abspath(os.path.dirname(__file__))
 parent_dir = str(Path(__file__).parent.parent.absolute())
 
 NOTIFY_CHANNEL_ID = int(os.getenv("NOTIFY_CHANNEL_ID", "1128232150135738529"))
+ABSENT_REQ_CHANNEL_ID = int(os.getenv("ABSENT_REQ_CHANNEL_ID", "1126031617614426142"))
 MEETING_TASKS: dict[str, dict[str, tasks.Loop | None]] = {}
 
 
@@ -111,6 +112,27 @@ class Meeting(commands.Cog):
                             embed.add_field(name="名稱", value=meeting["name"], inline=False)
                             ch = self.bot.get_channel(NOTIFY_CHANNEL_ID)
                             await ch.send(embed=embed)
+                        elif data["type"] == "meeting.new_absent_request":
+                            absent_request = data["absent_request"]
+                            logging.info(f"Received new absent request event for request #{absent_request['id']}")
+                            member_discord_id = int(
+                                (await self.rwapi.get_member_info(absent_request["member"], True))["discord_id"]
+                            )
+                            meeting = await self.rwapi.get_meeting_info(absent_request["meeting"])
+                            embed = Embed(
+                                title="收到新的假單",
+                                description="有一筆新的假單，請至網頁面板進行審核。",
+                                color=default_color
+                            )
+                            embed.add_field(
+                                name="會議名稱及 ID",
+                                value=f"{meeting['name']} (`#{meeting['id']}`)",
+                                inline=False
+                            )
+                            embed.add_field(name="成員", value=f"<@{member_discord_id}>", inline=False)
+                            embed.add_field(name="請假事由", value=absent_request["reason"], inline=False)
+                            ch = self.bot.get_channel(NOTIFY_CHANNEL_ID)
+                            await ch.send(embed=embed, view=self.MeetingURLView(meeting["id"]))
                         elif data["type"] == "meeting.review_absent_request":
                             absent_request = data["absent_request"]
                             logging.info(f"Received absent request review event for request #{absent_request['id']}")
