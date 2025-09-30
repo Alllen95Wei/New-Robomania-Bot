@@ -12,6 +12,7 @@ import websockets
 from websockets.asyncio.client import connect
 import asyncio
 from json import loads
+from pprint import pprint
 
 from roboweb_api import RobowebAPI
 
@@ -62,7 +63,7 @@ class Meeting(commands.Cog):
                     while True:
                         data = loads(await websocket.recv())
                         # don't send notifications for past meetings
-                        if "meeting" in data["type"] and data["type"] != "meeting.review_absent_request":
+                        if "meeting" in data["type"] and "absent_request" not in data["type"]:
                             start_time = datetime.datetime.fromisoformat(data["meeting"]["start_time"])
                             if start_time < datetime.datetime.now(now_tz):
                                 continue
@@ -85,7 +86,8 @@ class Meeting(commands.Cog):
                                 embed.add_field(name="不允許請假",
                                                 value="已停用此會議的請假功能。\n若無法參加會議，請直接與主幹聯絡。",
                                                 inline=False)
-                            host_discord_id = int((await self.rwapi.get_member_info(meeting["host"], True))["discord_id"])
+                            host_discord_id = int(
+                                (await self.rwapi.get_member_info(meeting["host"], True))["discord_id"])
                             embed.add_field(name="主持人", value=f"<@{host_discord_id}>", inline=False)
                             embed.add_field(name="開始時間",
                                             value=f"<t:{int(datetime.datetime.fromisoformat(
@@ -114,6 +116,7 @@ class Meeting(commands.Cog):
                             await ch.send(embed=embed)
                         elif data["type"] == "meeting.new_absent_request":
                             absent_request = data["absent_request"]
+                            pprint(absent_request)
                             logging.info(f"Received new absent request event for request #{absent_request['id']}")
                             member_discord_id = int(
                                 (await self.rwapi.get_member_info(absent_request["member"], True))["discord_id"]
@@ -131,7 +134,7 @@ class Meeting(commands.Cog):
                             )
                             embed.add_field(name="成員", value=f"<@{member_discord_id}>", inline=False)
                             embed.add_field(name="請假事由", value=absent_request["reason"], inline=False)
-                            ch = self.bot.get_channel(NOTIFY_CHANNEL_ID)
+                            ch = self.bot.get_channel(ABSENT_REQ_CHANNEL_ID)
                             await ch.send(embed=embed, view=self.MeetingURLView(meeting["id"]))
                         elif data["type"] == "meeting.review_absent_request":
                             absent_request = data["absent_request"]
@@ -144,10 +147,13 @@ class Meeting(commands.Cog):
                                 (await self.rwapi.get_member_info(absent_request["reviewer"], True))["discord_id"]
                             )
                             meeting = await self.rwapi.get_meeting_info(absent_request["meeting"])
-                            embed = Embed(title="假單審核結果", description="你的假單已經過主幹審核，結果如下：", color=default_color)
-                            embed.add_field(name="會議名稱及 ID", value=f"{meeting['name']} (`#{meeting['id']}`)", inline=False)
+                            embed = Embed(title="假單審核結果", description="你的假單已經過主幹審核，結果如下：",
+                                          color=default_color)
+                            embed.add_field(name="會議名稱及 ID", value=f"{meeting['name']} (`#{meeting['id']}`)",
+                                            inline=False)
                             embed.add_field(name="審核人員", value=f"<@{reviewer_discord_id}>", inline=False)
-                            embed.add_field(name="審核結果", value=status.get(absent_request["status"], "未知"), inline=False)
+                            embed.add_field(name="審核結果", value=status.get(absent_request["status"], "未知"),
+                                            inline=False)
                             if absent_request.get("reviewer_comment", None):
                                 embed.add_field(name="審核意見", value=absent_request["reviewer_comment"], inline=False)
                             embed.set_footer(text="若對審核結果有異議，請直接與主幹聯絡。")
@@ -158,7 +164,8 @@ class Meeting(commands.Cog):
                                     f"成員 {member_discord_id} 似乎關閉了陌生人私訊功能，因此無法傳送通知。"
                                 )
                             except Exception as e:
-                                logging.error(f"傳送私訊給成員 {member_discord_id} 時發生錯誤：{type(e).__name__}: {str(e)}")
+                                logging.error(
+                                    f"傳送私訊給成員 {member_discord_id} 時發生錯誤：{type(e).__name__}: {str(e)}")
                         else:
                             logging.info(f"Received unknown event: {data}")
             except websockets.exceptions.ConnectionClosedError:
@@ -350,8 +357,7 @@ class Meeting(commands.Cog):
                                 value=f"<t:"
                                       f"{int(datetime.datetime.fromisoformat(
                                           meeting_info.get('end_time')
-                                         ).timestamp())}"
-                                      f":F>",
+                                      ).timestamp())}:F>",
                                 inline=False)
             embed.add_field(name="地點", value=meeting_info.get("location"), inline=False)
             if meeting_info.get("can_absent", False):
