@@ -166,7 +166,8 @@ class NewVerification(commands.Cog):
                 self.member.id,
                 self.user_data["name"],
                 datetime.now(tz=now_tz).year - 2016,
-                self.user_data["email_address"]
+                self.user_data["email_address"],
+                self.member.display_avatar.url,
             )
             frc_guild: discord.Guild = self.outer_instance.bot.get_guild(1114203090950836284)
             self.member = frc_guild.get_member(self.member.id)
