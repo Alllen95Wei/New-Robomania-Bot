@@ -18,7 +18,7 @@ now_tz = zoneinfo.ZoneInfo("Asia/Taipei")
 base_dir = os.path.abspath(os.path.dirname(__file__))
 parent_dir = str(Path(__file__).parent.parent.absolute())
 
-VERIFICATION_CHANNEL_ID = 1114424382622793809  # 一般：1114444831054376971
+VERIFICATION_CHANNEL_ID = 1114444831054376971
 
 
 class NewVerification(commands.Cog):
