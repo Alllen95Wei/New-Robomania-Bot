@@ -289,8 +289,13 @@ class NewVerification(commands.Cog):
 
     @discord.slash_command(name="執行新版驗證", description="執行新版的身分驗證，並使用 Google 帳戶登入取得資料")
     async def new_verify(self, ctx: discord.ApplicationContext):
-        await self.on_member_join(ctx.user)
-        await ctx.respond(content="已透過私人訊息傳送驗證通知。", ephemeral=True)
+        frc_guild: discord.Guild = self.bot.get_guild(1114203090950836284)
+        member = frc_guild.get_member(self.ctx.user.id)
+        if not member:
+            await ctx.respond(content="你不在 7636 的伺服器中，無法使用此指令。", ephemeral=True)
+        else:
+            await self.on_member_join(member)
+            await ctx.respond(content="已透過私人訊息傳送驗證通知。", ephemeral=True)
 
 
 def setup(bot):
