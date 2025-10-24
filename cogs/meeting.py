@@ -235,7 +235,7 @@ class Meeting(commands.Cog):
                             embed.add_field(name="開始時間",
                                             value=f"<t:{int(datetime.datetime.fromisoformat(
                                                 meeting['start_time']).timestamp())}:F>", inline=False)
-                            embed.add_field(name="地點", value=meeting["location"], inline=False)
+                            embed.add_field(name="地點", value=dc_location_format(meeting["location"]), inline=False)
                             embed.set_footer(text="如要進行更多操作 (編輯、請假、審核假單)，請至網頁面板查看。")
                             ch = self.bot.get_channel(NOTIFY_CHANNEL_ID)
                             await ch.send(embed=embed, view=self.MeetingURLView(meeting_id))
@@ -392,7 +392,7 @@ class Meeting(commands.Cog):
                 value=meeting["description"],
                 inline=False,
             )
-        embed.add_field(name="會議地點", value=meeting["location"], inline=False)
+        embed.add_field(name="地點", value=dc_location_format(meeting["location"]), inline=False)
         ch = self.bot.get_channel(NOTIFY_CHANNEL_ID)
         mention_text = ""
         mention_list: list = meeting.get("discord_mentions", [])
@@ -451,7 +451,7 @@ class Meeting(commands.Cog):
             )
         host_discord_id = (await self.rwapi.get_member_info(meeting["host"], True))["discord_id"]
         embed.add_field(name="主持人", value=f"<@{host_discord_id}>", inline=False)
-        embed.add_field(name="會議地點", value=meeting["location"], inline=False)
+        embed.add_field(name="地點", value=dc_location_format(meeting["location"]), inline=False)
         absent_requests = await self.rwapi.get_absent_requests(meeting_id=meeting["id"])
         absent_request_str = ""
         for absent_request in absent_requests:
@@ -528,7 +528,7 @@ class Meeting(commands.Cog):
                                           meeting_info.get('end_time')
                                       ).timestamp())}:F>",
                                 inline=False)
-            embed.add_field(name="地點", value=meeting_info.get("location"), inline=False)
+            embed.add_field(name="地點", value=dc_location_format(meeting_info.get("location")), inline=False)
             if meeting_info.get("can_absent", False):
                 embed.add_field(name="允許請假", value="成員可透過網頁面板請假。", inline=False)
             else:
