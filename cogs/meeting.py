@@ -61,6 +61,40 @@ class Meeting(commands.Cog):
                     retry_delay = 2
                     while True:
                         data = loads(await websocket.recv())
+                        # handle "initial_data" request
+                        if data["type"] == "meeting.request_initial_data":
+                            logging.info("Received initial data request.")
+                            roles_list, channels_list = [], []
+                            frc_guild: discord.Guild = self.bot.guilds[0]
+                            for role in frc_guild.roles:
+                                if not (
+                                        role.name == "@everyone" or
+                                        role.is_integration() or
+                                        role.is_bot_managed() or
+                                        role.is_premium_subscriber()
+                                ):
+                                    roles_list.append(
+                                        {"id": role.id, "name": role.name, "color": role.color.value}
+                                    )
+                            for channel in frc_guild.channels:
+                                # we only need voice channels for meeting purposes
+                                if channel.type == discord.ChannelType.voice:
+                                    channels_list.append(
+                                        {"id": channel.id, "name": channel.name}
+                                    )
+                            await websocket.send(
+                                dumps({
+                                    "type": "roles_update",
+                                    "roles": roles_list,
+                                })
+                            )
+                            await websocket.send(
+                                dumps({
+                                    "type": "channels_update",
+                                    "channels": channels_list,
+                                })
+                            )
+                            return
                         # don't send notifications for past meetings
                         if "meeting" in data["type"] and "absent_request" not in data["type"]:
                             start_time = datetime.datetime.fromisoformat(data["meeting"]["start_time"])
