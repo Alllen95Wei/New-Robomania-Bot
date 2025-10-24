@@ -8,10 +8,9 @@ import logging
 import zoneinfo
 from pathlib import Path
 import datetime
-import websockets
 from websockets.asyncio.client import connect
 import asyncio
-from json import loads
+from json import loads, dumps
 from pprint import pprint
 
 from roboweb_api import RobowebAPI
@@ -168,12 +167,6 @@ class Meeting(commands.Cog):
                                     f"傳送私訊給成員 {member_discord_id} 時發生錯誤：{type(e).__name__}: {str(e)}")
                         else:
                             logging.info(f"Received unknown event: {data}")
-            except websockets.exceptions.ConnectionClosedError:
-                retries += 1
-                retry_delay *= 2  # Exponential backoff
-                logging.error(f"WebSocket connection closed unexpectedly. "
-                              f"Attempting to reconnect in {retry_delay} seconds...")
-                await asyncio.sleep(retry_delay)
             except Exception as e:
                 retries += 1
                 retry_delay *= 2  # Exponential backoff

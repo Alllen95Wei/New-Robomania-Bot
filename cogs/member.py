@@ -6,7 +6,6 @@ import os
 import zoneinfo
 from pathlib import Path
 import logging
-import websockets
 from websockets.asyncio.client import connect
 import asyncio
 from json import loads
@@ -51,7 +50,8 @@ class Member(commands.Cog):
                                 warning_detail["member"], True))["discord_id"])
                             operator_discord_id = int((await self.rwapi.get_member_info(
                                 warning_detail["operator"], True))["discord_id"])
-                            current_points = (await self.rwapi.get_member_info(warning_detail["member"]))["warning_points"]
+                            current_points = (
+                                await self.rwapi.get_member_info(warning_detail["member"]))["warning_points"]
                             is_positive = warning_detail["points"] < 0
                             embed = Embed(
                                 title=f"{'銷點' if is_positive else '記點'}通知",
@@ -72,12 +72,6 @@ class Member(commands.Cog):
                                 logging.error(f"無法傳送訊息給 {member_discord_id}: {e}")
                         else:
                             logging.info(f"Received unknown event: {data}")
-            except websockets.exceptions.ConnectionClosedError:
-                retries += 1
-                retry_delay *= 2  # Exponential backoff
-                logging.error(f"WebSocket connection closed unexpectedly. "
-                              f"Attempting to reconnect in {retry_delay} seconds...")
-                await asyncio.sleep(retry_delay)
             except Exception as e:
                 retries += 1
                 retry_delay *= 2  # Exponential backoff

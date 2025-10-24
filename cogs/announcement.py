@@ -7,7 +7,6 @@ import datetime
 import zoneinfo
 from pathlib import Path
 import logging
-import websockets
 from websockets.asyncio.client import connect, ClientConnection
 import asyncio
 from json import loads
@@ -71,17 +70,12 @@ class Announcement(commands.Cog):
                             if announcement_id in ANNOUNCEMENT_TASKS.keys():
                                 for task_type, task in ANNOUNCEMENT_TASKS[announcement_id].items():
                                     if task:
-                                        logging.debug(f"(#{announcement_id:2d}) Cancelling existing \"{task_type}\" task")
+                                        logging.debug(f"(#{announcement_id:2d}) "
+                                                      f"Cancelling existing \"{task_type}\" task")
                                         task.cancel()
                                 del ANNOUNCEMENT_TASKS[announcement_id]
                         else:
                             logging.info(f"Received unknown event: {data}")
-            except websockets.exceptions.ConnectionClosedError:
-                retries += 1
-                retry_delay *= 2  # Exponential backoff
-                logging.error(f"WebSocket connection closed unexpectedly. "
-                              f"Attempting to reconnect in {retry_delay} seconds...")
-                await asyncio.sleep(retry_delay)
             except Exception as e:
                 retries += 1
                 retry_delay *= 2  # Exponential backoff
