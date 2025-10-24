@@ -94,7 +94,7 @@ class Meeting(commands.Cog):
                                     "channels": channels_list,
                                 })
                             )
-                            return
+                            continue
                         # don't send notifications for past meetings
                         if "meeting" in data["type"] and "absent_request" not in data["type"]:
                             start_time = datetime.datetime.fromisoformat(data["meeting"]["start_time"])
