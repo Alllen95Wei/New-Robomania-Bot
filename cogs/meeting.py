@@ -26,10 +26,72 @@ ABSENT_REQ_CHANNEL_ID = int(os.getenv("ABSENT_REQ_CHANNEL_ID", "1126031617614426
 MEETING_TASKS: dict[str, dict[str, tasks.Loop | None]] = {}
 
 
+# By Gemini
+def get_best_text_color(hex_bg_color):
+    """
+    計算背景色與白色或黑色文字的對比度，並回傳具有較高對比度的文字色 (黑或白)。
+
+    參數:
+        hex_bg_color (str): 6位數的背景 HEX 色碼。
+
+    回傳:
+        str: '#000000' (黑色) 或 '#FFFFFF' (白色)。
+    """
+
+    # 步驟 1: HEX 轉 RGB 和 Gamma 校正 (使用前一個回答的函式內容)
+    hex_bg_color = hex_bg_color.lstrip('#')
+    R = int(hex_bg_color[0:2], 16)
+    G = int(hex_bg_color[2:4], 16)
+    B = int(hex_bg_color[4:6], 16)
+
+    def to_linear(c_8bit):
+        c = c_8bit / 255.0
+        if c <= 0.03928:
+            return c / 12.92
+        else:
+            return ((c + 0.055) / 1.055) ** 2.4
+
+    R_linear = to_linear(R)
+    G_linear = to_linear(G)
+    B_linear = to_linear(B)
+
+    # 步驟 2: 計算背景色的相對亮度 (L_bg)
+    # L = 0.2126*R + 0.7152*G + 0.0722*B
+    L_bg = (0.2126 * R_linear) + (0.7152 * G_linear) + (0.0722 * B_linear)
+
+    # 步驟 3: 定義黑白文字的相對亮度
+    L_black = 0.0  # 純黑色
+    L_white = 1.0  # 純白色
+
+    # 步驟 4: 定義對比度計算函數
+    def calculate_contrast(L1, L2):
+        L_lighter = max(L1, L2)
+        L_darker = min(L1, L2)
+        # 對比度公式: (L_lighter + 0.05) / (L_darker + 0.05)
+        return (L_lighter + 0.05) / (L_darker + 0.05)
+
+    # 步驟 5: 計算與黑白文字的對比度
+    contrast_with_black = calculate_contrast(L_bg, L_black)
+    contrast_with_white = calculate_contrast(L_bg, L_white)
+
+    # 步驟 6: 選擇對比度較高的顏色
+    if contrast_with_white > contrast_with_black:
+        return '#FFFFFF'  # 選擇白色文字
+    else:
+        return '#000000'  # 選擇黑色文字
+
+
+def dc_location_format(location: str) -> str:
+    if location.startswith("dc-"):
+        return f"https://discord.com/channels/1114203090950836284/{location[3:]}"
+    return location
+
+
 class Meeting(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.rwapi = None
+        self.ws = None
 
     class MeetingURLView(View):
         def __init__(self, meeting_id: int):
@@ -40,6 +102,81 @@ class Meeting(commands.Cog):
                 url=f"https://frc7636.dpdns.org/meeting/{meeting_id}/",
                 emoji="🔗"
             ))
+
+    async def update_roles(self):
+        websocket = self.ws
+        roles_list = []
+        frc_guild: discord.Guild = self.bot.guilds[0]
+        for role in frc_guild.roles:
+            if not (
+                    role.name == "@everyone" or
+                    role.is_integration() or
+                    role.is_bot_managed() or
+                    role.is_premium_subscriber()
+            ):
+                hex_color = f"#{str(hex(role.color.value))[2:].ljust(6, '0')}"
+                roles_list.append(
+                    {
+                        "id": role.id, "name": role.name,
+                        "color": hex_color,
+                        # "text_color": get_best_text_color(hex_color),
+                    }
+                )
+        await websocket.send(
+            dumps({
+                "type": "roles_update",
+                "roles": roles_list,
+            })
+        )
+
+    async def update_voice_channels(self):
+        websocket = self.ws
+        channels_list = {}
+        frc_guild: discord.Guild = self.bot.guilds[0]
+        # we only need voice channels for meeting purposes
+        for channel in frc_guild.voice_channels:
+            category = channel.category
+            if category:
+                category = category.name
+            else:
+                category = "(無分類)"
+            if category not in channels_list.keys():
+                channels_list[category] = []
+            channels_list[category].append(
+                {"id": channel.id, "name": channel.name}
+            )
+        await websocket.send(
+            dumps({
+                "type": "channels_update",
+                "channels": channels_list,
+            })
+        )
+
+    # send updated roles and channels on update events
+
+    @commands.Cog.listener()
+    async def on_guild_role_create(self, role: discord.Role):
+        await self.update_roles()
+
+    @commands.Cog.listener()
+    async def on_guild_role_delete(self, role: discord.Role):
+        await self.update_roles()
+
+    @commands.Cog.listener()
+    async def on_guild_role_update(self, before: discord.Role, after: discord.Role):
+        await self.update_roles()
+
+    @commands.Cog.listener()
+    async def on_guild_channel_update(self, before, after):
+        await self.update_voice_channels()
+
+    @commands.Cog.listener()
+    async def on_guild_channel_create(self, channel):
+        await self.update_voice_channels()
+
+    @commands.Cog.listener()
+    async def on_guild_channel_delete(self, channel):
+        await self.update_voice_channels()
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -56,6 +193,7 @@ class Meeting(commands.Cog):
                 async with (connect(f"{os.getenv('WS_URL')}meeting/",
                                     additional_headers={"Authorization": f"Token {os.getenv("ROBOWEB_API_TOKEN")}"})
                             as websocket):
+                    self.ws = websocket
                     logging.info("Connected to WebSocket successfully.")
                     retries = 0
                     retry_delay = 2
@@ -64,36 +202,8 @@ class Meeting(commands.Cog):
                         # handle "initial_data" request
                         if data["type"] == "meeting.request_initial_data":
                             logging.info("Received initial data request.")
-                            roles_list, channels_list = [], []
-                            frc_guild: discord.Guild = self.bot.guilds[0]
-                            for role in frc_guild.roles:
-                                if not (
-                                        role.name == "@everyone" or
-                                        role.is_integration() or
-                                        role.is_bot_managed() or
-                                        role.is_premium_subscriber()
-                                ):
-                                    roles_list.append(
-                                        {"id": role.id, "name": role.name, "color": role.color.value}
-                                    )
-                            for channel in frc_guild.channels:
-                                # we only need voice channels for meeting purposes
-                                if channel.type == discord.ChannelType.voice:
-                                    channels_list.append(
-                                        {"id": channel.id, "name": channel.name}
-                                    )
-                            await websocket.send(
-                                dumps({
-                                    "type": "roles_update",
-                                    "roles": roles_list,
-                                })
-                            )
-                            await websocket.send(
-                                dumps({
-                                    "type": "channels_update",
-                                    "channels": channels_list,
-                                })
-                            )
+                            await self.update_roles()
+                            await self.update_voice_channels()
                             continue
                         # don't send notifications for past meetings
                         if "meeting" in data["type"] and "absent_request" not in data["type"]:
@@ -222,7 +332,14 @@ class Meeting(commands.Cog):
             notify_time = datetime.datetime.now(now_tz) + datetime.timedelta(seconds=5)
             logging.debug(f"(#{meeting_id:2d}) Notify time is less than 5 minutes away, setting to 5 seconds from now")
         else:
-            notify_time = start_time - datetime.timedelta(minutes=5)
+            notify_time_offset = datetime.datetime.strptime(
+                meeting.get("discord_notify_time", "00:05:00"), "%H:%M:%S"
+            )
+            notify_time = start_time - datetime.timedelta(
+                hours=notify_time_offset.hour,
+                minutes=notify_time_offset.minute,
+                seconds=notify_time_offset.second,
+            )
             logging.debug(f"(#{meeting_id:2d}) Notify time set to {notify_time.isoformat()}")
         start_time = datetime.datetime.fromisoformat(meeting["start_time"]).replace(tzinfo=now_tz)
         MEETING_TASKS[meeting_id] = {
@@ -253,7 +370,15 @@ class Meeting(commands.Cog):
 
     async def notify_meeting(self, meeting: dict):
         start_time = datetime.datetime.fromisoformat(meeting["start_time"]).astimezone(now_tz)
-        if start_time - datetime.datetime.now(now_tz) > datetime.timedelta(seconds=1000):
+        notify_time_offset = datetime.datetime.strptime(
+            meeting.get("discord_notify_time", "00:05:00"), "%H:%M:%S"
+        )
+        notify_time = start_time - datetime.timedelta(
+            hours=notify_time_offset.hour,
+            minutes=notify_time_offset.minute,
+            seconds=notify_time_offset.second,
+        )
+        if notify_time - datetime.datetime.now(now_tz) > datetime.timedelta(seconds=1000):
             return
         embed = Embed(
             title="會議即將開始！",
@@ -269,7 +394,16 @@ class Meeting(commands.Cog):
             )
         embed.add_field(name="會議地點", value=meeting["location"], inline=False)
         ch = self.bot.get_channel(NOTIFY_CHANNEL_ID)
-        await ch.send(content="@everyone", embed=embed)
+        mention_text = ""
+        mention_list: list = meeting.get("discord_mentions", [])
+        if "@everyone" in mention_list:
+            mention_text = "@everyone"
+        else:
+            for role in mention_list:
+                mention_text += f"<@&{role}> "
+        if mention_text == "":
+            mention_text = "@everyone"
+        await ch.send(content=mention_text, embed=embed)
         absent_requests = await self.rwapi.get_absent_requests(meeting_id=meeting["id"])
         for absent_request in absent_requests:
             if absent_request["status"] in ("pending", "rejected"):
@@ -327,7 +461,15 @@ class Meeting(commands.Cog):
         if absent_request_str != "":
             embed.add_field(name="請假人員", value=absent_request_str, inline=False)
         ch = self.bot.get_channel(NOTIFY_CHANNEL_ID)
-        await ch.send(content="@everyone", embed=embed)
+        mention_text = ""
+        mention_list: list = meeting.get("discord_mentions", [])
+        if "@everyone" in mention_list:
+            mention_text = "@everyone"
+        else:
+            for role in mention_list:
+                mention_text += f"<@&{role}> "
+        if mention_text != "":
+            await ch.send(content=mention_text, embed=embed)
         MEETING_TASKS[meeting["id"]]["start"].stop()
         del MEETING_TASKS[meeting["id"]]["start"]
 
