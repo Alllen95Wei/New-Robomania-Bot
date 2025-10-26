@@ -328,13 +328,12 @@ class Meeting(commands.Cog):
                     logging.debug(f"(#{meeting_id:2d}) Cancelling existing \"{task_type}\" task")
                     task.cancel()
         start_time = datetime.datetime.fromisoformat(meeting["start_time"]).replace(tzinfo=now_tz)
-        if not start_time - datetime.datetime.now(now_tz) >= datetime.timedelta(minutes=5):
-            notify_time = datetime.datetime.now(now_tz) + datetime.timedelta(seconds=5)
-            logging.debug(f"(#{meeting_id:2d}) Notify time is less than 5 minutes away, setting to 5 seconds from now")
-        else:
-            notify_time_offset = datetime.timedelta(seconds=float(meeting.get("discord_notify_time", "300")))
-            notify_time = start_time - notify_time_offset
-            logging.debug(f"(#{meeting_id:2d}) Notify time set to {notify_time.isoformat()}")
+        notify_time_offset = datetime.timedelta(seconds=float(meeting.get("discord_notify_time", "300")))
+        notify_time = start_time - notify_time_offset
+        if notify_time < datetime.datetime.now(now_tz):
+            logging.debug(f"(#{meeting_id:2d}) Notify time has passed, setting to 10 seconds from now")
+            notify_time = datetime.datetime.now(now_tz) + datetime.timedelta(seconds=10)
+        logging.debug(f"(#{meeting_id:2d}) Notify time set to {notify_time.isoformat()}")
         start_time = datetime.datetime.fromisoformat(meeting["start_time"]).replace(tzinfo=now_tz)
         MEETING_TASKS[meeting_id] = {
             "notify": tasks.Loop(
@@ -603,6 +602,8 @@ class Meeting(commands.Cog):
             embed.add_field(name="錯誤訊息", value=f"```{type(e).__name__}: {str(e)}```", inline=False)
         if ctx:
             await ctx.respond(embed=embed, ephemeral=True)
+        else:
+            logging.debug(embed.to_dict())
 
 
 def setup(bot):
