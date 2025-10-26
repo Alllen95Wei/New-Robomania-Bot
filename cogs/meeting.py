@@ -332,14 +332,8 @@ class Meeting(commands.Cog):
             notify_time = datetime.datetime.now(now_tz) + datetime.timedelta(seconds=5)
             logging.debug(f"(#{meeting_id:2d}) Notify time is less than 5 minutes away, setting to 5 seconds from now")
         else:
-            notify_time_offset = datetime.datetime.strptime(
-                meeting.get("discord_notify_time", "00:05:00"), "%H:%M:%S"
-            )
-            notify_time = start_time - datetime.timedelta(
-                hours=notify_time_offset.hour,
-                minutes=notify_time_offset.minute,
-                seconds=notify_time_offset.second,
-            )
+            notify_time_offset = datetime.timedelta(seconds=float(meeting.get("discord_notify_time", "300")))
+            notify_time = start_time - notify_time_offset
             logging.debug(f"(#{meeting_id:2d}) Notify time set to {notify_time.isoformat()}")
         start_time = datetime.datetime.fromisoformat(meeting["start_time"]).replace(tzinfo=now_tz)
         MEETING_TASKS[meeting_id] = {
@@ -370,14 +364,8 @@ class Meeting(commands.Cog):
 
     async def notify_meeting(self, meeting: dict):
         start_time = datetime.datetime.fromisoformat(meeting["start_time"]).astimezone(now_tz)
-        notify_time_offset = datetime.datetime.strptime(
-            meeting.get("discord_notify_time", "00:05:00"), "%H:%M:%S"
-        )
-        notify_time = start_time - datetime.timedelta(
-            hours=notify_time_offset.hour,
-            minutes=notify_time_offset.minute,
-            seconds=notify_time_offset.second,
-        )
+        notify_time_offset = datetime.timedelta(seconds=float(meeting.get("discord_notify_time", "300")))
+        notify_time = start_time - notify_time_offset
         if notify_time - datetime.datetime.now(now_tz) > datetime.timedelta(seconds=1000):
             return
         embed = Embed(
