@@ -37,7 +37,7 @@ class Member(commands.Cog):
             try:
                 async with (connect(f"{os.getenv('WS_URL')}member/",
                                     additional_headers={"Authorization": f"Token {os.getenv("ROBOWEB_API_TOKEN")}"},
-                                    user_agent=USER_AGENT + " New-Robomania-Bot")
+                                    user_agent_header=USER_AGENT + " New-Robomania-Bot")
                             as websocket):
                     logging.info("Connected to WebSocket successfully.")
                     retries = 0
