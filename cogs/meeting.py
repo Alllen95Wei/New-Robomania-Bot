@@ -223,6 +223,16 @@ class Meeting(commands.Cog):
                                 color=default_color,
                             )
                             embed.add_field(name="名稱", value=meeting["name"], inline=False)
+                            mention_text = ""
+                            mention_list: list = meeting.get("discord_mentions", [])
+                            if "@everyone" in mention_list:
+                                mention_text = "所有人"
+                            else:
+                                for role in mention_list:
+                                    mention_text += f"<@&{role}> "
+                            if mention_text == "":
+                                mention_text = "所有人"
+                            embed.add_field(name="參加對象", value=mention_text, inline=False)
                             if meeting["can_absent"]:
                                 embed.add_field(name="允許請假", value="成員可透過網頁面板請假。", inline=False)
                             else:
