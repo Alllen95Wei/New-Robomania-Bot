@@ -8,7 +8,7 @@ import logging
 import zoneinfo
 from pathlib import Path
 import datetime
-from websockets.asyncio.client import connect
+from websockets.asyncio.client import connect, USER_AGENT
 import asyncio
 from json import loads, dumps
 from pprint import pprint
@@ -191,7 +191,8 @@ class Meeting(commands.Cog):
             logging.info(f"Attempting to connect to WebSocket (Attempt {retries + 1}/{max_retries})...")
             try:
                 async with (connect(f"{os.getenv('WS_URL')}meeting/",
-                                    additional_headers={"Authorization": f"Token {os.getenv("ROBOWEB_API_TOKEN")}"})
+                                    additional_headers={"Authorization": f"Token {os.getenv("ROBOWEB_API_TOKEN")}"},
+                                    user_agent=USER_AGENT + " New-Robomania-Bot")
                             as websocket):
                     self.ws = websocket
                     logging.info("Connected to WebSocket successfully.")

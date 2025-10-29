@@ -7,7 +7,7 @@ import datetime
 import zoneinfo
 from pathlib import Path
 import logging
-from websockets.asyncio.client import connect, ClientConnection
+from websockets.asyncio.client import connect, ClientConnection, USER_AGENT
 import asyncio
 from json import loads
 
@@ -42,7 +42,8 @@ class Announcement(commands.Cog):
             logging.info(f"Attempting to connect to WebSocket (Attempt {retries + 1}/{max_retries})...")
             try:
                 async with (connect(f"{os.getenv('WS_URL')}announcement/",
-                                    additional_headers={"Authorization": f"Token {os.getenv("ROBOWEB_API_TOKEN")}"})
+                                    additional_headers={"Authorization": f"Token {os.getenv("ROBOWEB_API_TOKEN")}"},
+                                    user_agent=USER_AGENT + " New-Robomania-Bot")
                             as websocket):
                     self.ws = websocket
                     logging.info("Connected to WebSocket successfully.")
