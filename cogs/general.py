@@ -125,7 +125,7 @@ class General(commands.Cog):
                             embed.add_field(name="使用者代理", value=f"```{data['user_agent']}```", inline=False)
                             embed.add_field(name="登入方式", value=data["method"], inline=False)
                             embed.timestamp = datetime.datetime.now(tz=now_tz)
-                            member = self.bot.get_user(data["member_discord_id"])
+                            member = self.bot.get_user(int(data["member_discord_id"]))
                             await member.send(embed=embed)
                         else:
                             logging.info(f"Received unknown event: {data}")
