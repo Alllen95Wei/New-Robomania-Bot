@@ -99,7 +99,7 @@ class Meeting(commands.Cog):
             self.add_item(Button(
                 label="查看會議詳情",
                 style=discord.ButtonStyle.link,
-                url=f"https://frc7636.dpdns.org/meeting/{meeting_id}/",
+                url=f"https://panel.team7636.com/meeting/{meeting_id}/",
                 emoji="🔗"
             ))
 
@@ -488,7 +488,7 @@ class Meeting(commands.Cog):
                 emoji="📅",
                 label="建立會議",
                 style=discord.ButtonStyle.link,
-                url="https://frc7636.dpdns.org/meeting/new/",
+                url="https://panel.team7636.com/meeting/new/",
             ))
             return view
 
