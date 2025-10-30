@@ -2,7 +2,7 @@
 import discord
 from discord.ext import commands
 from discord import Option, Embed
-from discord.ui import View
+from discord.ui import View, Button
 import os
 import subprocess
 from shlex import split
@@ -72,7 +72,7 @@ class General(commands.Cog):
                 )
                 embed.add_field(name="登入代碼", value=f"`{login_code['code']}`", inline=False)
                 embed.add_field(name="建立時間", value=f"<t:{create_time}:F>", inline=False)
-                await interaction.user.send(embed=embed)
+                await interaction.user.send(embed=embed, view=General.LoginButton())
                 await interaction.followup.send("已透過私人訊息傳送登入代碼。", ephemeral=True)
             except Exception as e:
                 embed = Embed(
@@ -82,6 +82,11 @@ class General(commands.Cog):
                 )
                 embed.add_field(name="錯誤訊息", value=f"```{type(e).__name__}: {str(e)}```", inline=False)
                 await interaction.followup.send(embed=embed, ephemeral=True)
+
+    class LoginButton(View):
+        def __init__(self):
+            super().__init__(timeout=None)
+            self.add_item(Button(label="前往登入頁面", url="https://panel.team7636.com/accounts/login/"))
 
     @commands.Cog.listener()
     async def on_ready(self):
