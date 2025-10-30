@@ -115,6 +115,16 @@ class RobowebAPI:
                 raise Exception(f"Failed to fetch pinned announcements: {response.status} ({await response.text()})")
             return await response.json()
 
+    async def create_login_code(self, member_id: int) -> dict:
+        url = f"{self.BASE_URL}login_codes/"
+        payload = {
+            "member": str(member_id),
+        }
+        async with self.session.post(url, json=payload) as response:
+            if response.status != 201:
+                raise Exception(f"Failed to create login code: {response.status} ({await response.text()})")
+            return await response.json()
+
 
 if __name__ == "__main__":
     from dotenv import load_dotenv
@@ -126,8 +136,7 @@ if __name__ == "__main__":
     async def main():
         load_dotenv("TOKEN.env")
         api = RobowebAPI(getenv("ROBOWEB_API_TOKEN"))
-        # await api.index_members()
-        pprint(await api.get_pinned_announcements())
+        pprint(await api.create_login_code(1))
         await api.session.close()
 
 

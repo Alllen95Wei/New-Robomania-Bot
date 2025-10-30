@@ -2,6 +2,7 @@
 import discord
 from discord.ext import commands
 from discord import Option, Embed
+from discord.ui import View
 import os
 import subprocess
 from shlex import split
@@ -26,10 +27,67 @@ class General(commands.Cog):
         self.bot = bot
         self.rwapi: RobowebAPI | None = None
 
+    class GenerateLoginCodeView(View):
+        def __init__(self, rwapi: RobowebAPI):
+            super().__init__(timeout=None)
+            self.rwapi = rwapi
+            self.cooldown = commands.CooldownMapping.from_cooldown(1, 90, commands.BucketType.user)
+
+        @discord.ui.button(label="產生登入代碼", custom_id="generate_login_code_button",
+                           style=discord.ButtonStyle.green, emoji="🗝️")
+        async def generate_login_code_button(
+                self, button: discord.ui.Button, interaction: discord.Interaction
+        ):
+            await interaction.response.defer(ephemeral=True)
+            # check cooldown
+            bucket = self.cooldown.get_bucket(interaction.message)
+            retry_after = bucket.update_rate_limit()
+            if retry_after:
+                embed = Embed(
+                    title="錯誤：冷卻中",
+                    description=f"每次操作需要間隔至少 90 秒。請稍等 {int(retry_after)} 秒後再試。",
+                    color=error_color,
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            member = await self.rwapi.search_members(discord_id=interaction.user.id)
+            # check if member exists in web database
+            if not isinstance(member, list) or len(member) == 0:
+                embed = Embed(
+                    title="錯誤：成員不存在",
+                    description="你的 Discord ID 尚未註冊至資料庫中，因此無法產生登入代碼。\n"
+                                "請先使用 `/執行新版驗證` 指令進行驗證。",
+                    color=error_color,
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            try:
+                login_code = await self.rwapi.create_login_code(member[0].get("id"))
+                create_time = int(
+                    datetime.datetime.fromisoformat(login_code.get("created_at")).astimezone(now_tz).timestamp())
+                embed = Embed(
+                    title="成功產生登入代碼",
+                    description=f"你的代碼已顯示於下方。\n請妥善保管，並於 <t:{create_time + 90}:R> 使用此代碼。",
+                    color=default_color,
+                )
+                embed.add_field(name="登入代碼", value=f"`{login_code['code']}`", inline=False)
+                embed.add_field(name="建立時間", value=f"<t:{create_time}:F>", inline=False)
+                await interaction.user.send(embed=embed)
+                await interaction.followup.send("已透過私人訊息傳送登入代碼。", ephemeral=True)
+            except Exception as e:
+                embed = Embed(
+                    title="錯誤：無法產生登入代碼",
+                    description="發生未知錯誤，請稍後再試。",
+                    color=error_color,
+                )
+                embed.add_field(name="錯誤訊息", value=f"```{type(e).__name__}: {str(e)}```", inline=False)
+                await interaction.followup.send(embed=embed, ephemeral=True)
+
     @commands.Cog.listener()
     async def on_ready(self):
         if not self.rwapi:
             self.rwapi = RobowebAPI(os.getenv("ROBOWEB_API_TOKEN"))
+        self.bot.add_view(self.GenerateLoginCodeView(self.rwapi))
 
     @commands.Cog.listener()
     async def on_voice_state_update(
@@ -205,6 +263,27 @@ class General(commands.Cog):
                     ephemeral=is_private,
                 )
                 os.remove(txt_file_path)
+
+    @commands.slash_command(name="建立登入代碼按鈕", description="在目前頻道建立「產生登入代碼」的按鈕。")
+    @commands.is_owner()
+    async def create_login_code_button(
+            self,
+            ctx: discord.ApplicationContext,
+    ):
+        await ctx.defer(ephemeral=True)
+        view = self.GenerateLoginCodeView(self.rwapi)
+        embed = Embed(
+            title="產生登入代碼",
+            description="按下下方的按鈕，以產生你的登入代碼。",
+            color=default_color,
+        )
+        await ctx.channel.send(embed=embed, view=view)
+        embed = Embed(
+            title="成功",
+            description="已在目前頻道建立「產生登入代碼」的按鈕。",
+            color=default_color,
+        )
+        await ctx.respond(embed=embed, ephemeral=True)
 
 
 def setup(bot: commands.Bot):
