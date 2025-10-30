@@ -12,6 +12,9 @@ import datetime
 import zoneinfo
 from typing import Literal
 from pathlib import Path
+from websockets.asyncio.client import connect, ClientConnection, USER_AGENT
+from json import loads
+import asyncio
 
 from roboweb_api import RobowebAPI
 
@@ -26,6 +29,7 @@ class General(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.rwapi: RobowebAPI | None = None
+        self.ws: ClientConnection | None = None
 
     class GenerateLoginCodeView(View):
         def __init__(self, rwapi: RobowebAPI):
@@ -93,6 +97,45 @@ class General(commands.Cog):
         if not self.rwapi:
             self.rwapi = RobowebAPI(os.getenv("ROBOWEB_API_TOKEN"))
         self.bot.add_view(self.GenerateLoginCodeView(self.rwapi))
+
+        max_retries = 15
+        retries = 0
+        retry_delay = 2
+        while retries <= max_retries:
+            logging.info(f"Attempting to connect to WebSocket (Attempt {retries + 1}/{max_retries})...")
+            try:
+                async with (connect(f"{os.getenv('WS_URL')}auth/",
+                                    additional_headers={"Authorization": f"Token {os.getenv("ROBOWEB_API_TOKEN")}"},
+                                    user_agent_header=USER_AGENT + " New-Robomania-Bot")
+                            as websocket):
+                    self.ws = websocket
+                    logging.info("Connected to WebSocket successfully.")
+                    retries = 0
+                    retry_delay = 2
+                    while True:
+                        data = loads(await websocket.recv())
+                        if data["type"] == "auth.new_login":
+                            embed = Embed(
+                                title="新的登入通知",
+                                description="有人在隊務管理面板登入了你的帳號。請確認是否為你本人所進行的操作。\n"
+                                            "如果你懷疑你的帳號遭到盜用，請立即更換密碼，並告知管理員。",
+                                color=default_color,
+                            )
+                            embed.add_field(name="IP 位址", value=f"`{data['ip']}`", inline=False)
+                            embed.add_field(name="使用者代理", value=f"```{data['user_agent']}```", inline=False)
+                            embed.add_field(name="登入方式", value=data["method"], inline=False)
+                            embed.timestamp = datetime.datetime.now(tz=now_tz)
+                            member = self.bot.get_user(data["member_discord_id"])
+                            await member.send(embed=embed)
+                        else:
+                            logging.info(f"Received unknown event: {data}")
+            except Exception as e:
+                retries += 1
+                retry_delay *= 2  # Exponential backoff
+                logging.error(f"An error occurred: {type(e).__name__}: {str(e)}. "
+                              f"Attempting to reconnect in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+        logging.error("Max retries reached. Could not connect to WebSocket.")
 
     @commands.Cog.listener()
     async def on_voice_state_update(
