@@ -78,6 +78,17 @@ class General(commands.Cog):
                 embed.add_field(name="建立時間", value=f"<t:{create_time}:F>", inline=False)
                 await interaction.user.send(embed=embed, view=General.LoginButton())
                 await interaction.followup.send("已透過私人訊息傳送登入代碼。", ephemeral=True)
+            except discord.errors.HTTPException as error:
+                if error.code == 50007:
+                    embed = Embed(
+                        title="錯誤：無法傳送私人訊息",
+                        description="請前往此伺服器的隱私設定，確認你的帳號允許來自此伺服器的私訊，然後再試一次。",
+                        color=error_color,
+                    )
+                    embed.add_field(name="錯誤訊息", value=f"```{type(error).__name__}: {str(error)}```", inline=False)
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                else:
+                    raise
             except Exception as e:
                 embed = Embed(
                     title="錯誤：無法產生登入代碼",
