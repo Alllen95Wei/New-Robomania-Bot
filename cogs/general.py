@@ -77,7 +77,8 @@ class General(commands.Cog):
                 embed.add_field(name="登入代碼", value=f"`{login_code['code']}`", inline=False)
                 embed.add_field(name="建立時間", value=f"<t:{create_time}:F>", inline=False)
                 await interaction.user.send(embed=embed, view=General.LoginButton())
-                await interaction.followup.send("已透過私人訊息傳送登入代碼。", ephemeral=True)
+                embed = Embed(title="成功產生登入代碼", description="已透過私人訊息傳送你的登入代碼。", color=default_color)
+                await interaction.followup.send(embed=embed, ephemeral=True)
             except discord.errors.HTTPException as error:
                 if error.code == 50007:
                     embed = Embed(
